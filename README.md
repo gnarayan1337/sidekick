@@ -13,11 +13,15 @@ Sidekick AI anticipates user intent and provides actionable shortcuts with a sin
 - Shows 2-4 dynamic buttons with the most relevant actions
 - Beautiful, modern UI that adapts to light/dark themes
 
-### Element Context Analysis (NEW!)
-- **Alt+Click** (Windows/Linux) or **Cmd+Click** (Mac) on any element
-- Get context-specific actions for charts, tables, buttons, and more
-- Special support for trading platforms (order books, candlestick charts, indicators)
-- Analyzes element structure, content, and surrounding context
+### Element Analysis (NEW!)
+- **Alt+Click** any element on a page to analyze it
+- Get context-specific actions for:
+  - 📊 **Charts & Graphs** - Extract data, analyze trends, explain insights
+  - 🖼️ **Images** - Describe content, extract text, find similar
+  - 📋 **Tables** - Summarize data, export to CSV, find patterns
+  - 🔢 **Numbers** - Calculate, convert units, analyze values
+  - 🔘 **Buttons/Links** - Explain functionality, find alternatives
+  - 📝 **Forms** - Validate fields, suggest values, extract structure
 
 ### Workflow-Specific Actions
 
@@ -73,16 +77,14 @@ Sidekick AI anticipates user intent and provides actionable shortcuts with a sin
 3. **Get Results**: View the AI-generated response in a beautiful panel
 4. **Take Action**: Copy to clipboard or insert directly into text fields
 
-### Element Analysis Mode (NEW!)
-1. **Alt+Click** (Windows/Linux) or **Cmd+Click** (Mac) on any element
-2. **See Context Actions**: Get actions specific to that element type
-3. **Execute Actions**: Click to analyze charts, tables, buttons, etc.
-
-#### Special Support for Trading Platforms
-- **Order Books**: Analyze spread, order flow, market depth
-- **Price Charts**: Find patterns, analyze trends, identify key levels
-- **Candlesticks**: Get technical analysis, indicator signals
-- **Data Tables**: Calculate statistics, visualize data
+### Element Analysis Mode
+1. **Alt+Click**: Hold Alt and click any element on the page
+2. **See Analysis Options**: Get actions specific to that element type
+3. **Execute Actions**: Click to analyze charts, extract data, explain functionality
+4. **Perfect for**:
+   - Trading platforms: Analyze order books, candle patterns, spreads
+   - Dashboards: Extract data from charts and visualizations
+   - Complex UIs: Understand what buttons and elements do
 
 ## 🔧 Technical Details
 
@@ -92,7 +94,6 @@ Sidekick AI anticipates user intent and provides actionable shortcuts with a sin
   - Background service worker for API calls
   - Content script for UI interaction
   - Secure API key storage using Chrome Storage API
-  - Dynamic context analysis for both text and elements
 
 ## 🛡️ Privacy & Security
 

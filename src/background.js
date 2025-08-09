@@ -24,26 +24,26 @@ async function loadSettings() {
 // Listen for messages from content script
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.type === 'GET_ACTIONS') {
-    // Get contextual actions based on the selected text
-    analyzeAndGenerateActions(request.selectedText, request.context)
-      .then(actions => sendResponse({ actions }))
-      .catch(error => {
-        console.error('Error generating actions:', error);
-        sendResponse({ actions: getFallbackActions() });
-      });
-    return true; // Will respond asynchronously
-  } else if (request.type === 'GET_ELEMENT_ACTIONS') {
-    // Get element-specific actions
-    analyzeElementAndGenerateActions(request.element, request.context)
-      .then(actions => sendResponse({ actions }))
-      .catch(error => {
-        console.error('Error generating element actions:', error);
-        sendResponse({ actions: getElementFallbackActions(request.context) });
-      });
+    // Get contextual actions based on the selected text or element
+    if (request.isElementAnalysis) {
+      analyzeAndGenerateElementActions(request.selectedText, request.context)
+        .then(actions => sendResponse({ actions }))
+        .catch(error => {
+          console.error('Error generating element actions:', error);
+          sendResponse({ actions: getElementFallbackActions(request.context.elementContext) });
+        });
+    } else {
+      analyzeAndGenerateActions(request.selectedText, request.context)
+        .then(actions => sendResponse({ actions }))
+        .catch(error => {
+          console.error('Error generating actions:', error);
+          sendResponse({ actions: getFallbackActions() });
+        });
+    }
     return true; // Will respond asynchronously
   } else if (request.type === 'EXECUTE_ACTION') {
     // Execute the selected action
-    executeAction(request.action, request.text, request.context, request.mode)
+    executeAction(request.action, request.text, request.context, request.isElementAnalysis)
       .then(result => sendResponse({ success: true, result }))
       .catch(error => sendResponse({ success: false, error: error.message }));
     return true; // Will respond asynchronously
@@ -55,9 +55,9 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 });
 
 // Analyze element and generate contextual actions
-async function analyzeElementAndGenerateActions(element, context) {
+async function analyzeAndGenerateElementActions(elementDescription, context) {
   if (!apiKey) {
-    return getElementFallbackActions(context);
+    return getElementFallbackActions(context.elementContext);
   }
 
   try {
@@ -77,21 +77,15 @@ async function analyzeElementAndGenerateActions(element, context) {
         messages: [
           {
             role: 'user',
-            content: `Analyze this clicked element and suggest exactly 4 contextual actions that would be most useful.
+            content: `Analyze this clicked element and suggest exactly 4 contextual actions that would be most useful. 
             
 Context:
 - Current URL: ${context.url}
 - Page title: ${context.title}
-- Element type: ${element.tagName}
-- Element text: "${element.innerText?.substring(0, 200) || 'No text'}"
-- Element classes: ${element.className}
-- Element ID: ${element.id}
-- Parent context: ${JSON.stringify(context.parentContext)}
-- Is interactive: ${context.isInteractive}
-- Has chart: ${context.hasChart}
-- Has table: ${context.hasTable}
-- Has numbers: ${context.hasNumbers}
-${context.isTradingPlatform ? `- Trading context: ${JSON.stringify(context.tradingContext)}` : ''}
+- Element type: ${context.elementContext.type}
+- Element tag: ${context.elementContext.tagName}
+- Element text/content: "${elementDescription}"
+- Element attributes: ${JSON.stringify(context.elementContext.attributes)}
 
 Return a JSON array with exactly 4 actions. Each action should have:
 - id: a unique identifier (snake_case)
@@ -100,20 +94,20 @@ Return a JSON array with exactly 4 actions. Each action should have:
 - description: what the action will do (one sentence)
 
 Guidelines:
-- If it's a chart/graph: suggest analysis, pattern detection, export data, explain trends
-- If it's a button/link: suggest explain purpose, find similar, extract info, analyze behavior
-- If it's a table cell: suggest calculate, compare, visualize, extract row/column
-- If it's an image: suggest describe, extract text, find similar, analyze content
-- If it's a form field: suggest validate, autofill, explain purpose, generate examples
-- If it's trading/financial: suggest analyze spread, calculate profit/loss, explain indicators, compare prices
-- Be specific to the element clicked, not generic
+- If it's an image: suggest analysis, extraction, editing, or search actions
+- If it's a chart/graph: suggest data extraction, explanation, trend analysis
+- If it's a table: suggest sorting, filtering, exporting, analysis
+- If it's a button/link: suggest explanation, automation, or alternative actions
+- If it's numeric data: suggest calculations, comparisons, visualizations
+- If it's a form element: suggest validation, auto-fill, or extraction
+- Be specific to the actual element and its context on this page
 
-Example for an order book element:
+Example response format:
 [
-  {"id": "analyze_spread", "label": "Analyze Spread", "icon": "📊", "description": "Calculate bid-ask spread and market depth"},
-  {"id": "volume_profile", "label": "Volume Profile", "icon": "📈", "description": "Show volume distribution at different price levels"},
-  {"id": "order_imbalance", "label": "Order Imbalance", "icon": "⚖️", "description": "Detect buy/sell pressure imbalances"},
-  {"id": "price_levels", "label": "Key Levels", "icon": "🎯", "description": "Identify support and resistance levels"}
+  {"id": "analyze_chart", "label": "Analyze Trends", "icon": "📈", "description": "Extract and explain the data trends in this chart"},
+  {"id": "export_data", "label": "Export Data", "icon": "📊", "description": "Extract the underlying data into a table format"},
+  {"id": "compare_periods", "label": "Compare Periods", "icon": "🔄", "description": "Compare different time periods in this visualization"},
+  {"id": "explain_metrics", "label": "Explain Metrics", "icon": "💡", "description": "Explain what these metrics mean and their significance"}
 ]
 
 Respond with ONLY the JSON array, no other text.`
@@ -143,69 +137,71 @@ Respond with ONLY the JSON array, no other text.`
   }
 
   // If anything fails, return context-based fallback actions
-  return getElementFallbackActions(context);
+  return getElementFallbackActions(context.elementContext);
 }
 
-// Get element-specific fallback actions
-function getElementFallbackActions(context) {
-  // Trading platform specific actions
-  if (context.isTradingPlatform && context.tradingContext) {
-    if (context.tradingContext.isOrderBook) {
+// Get fallback actions for element analysis
+function getElementFallbackActions(elementContext) {
+  const elementType = elementContext?.type || 'unknown';
+  
+  switch (elementType) {
+    case 'image':
       return [
-        { id: 'analyze_spread', label: 'Analyze Spread', icon: '📊', description: 'Calculate current bid-ask spread and depth' },
-        { id: 'order_flow', label: 'Order Flow', icon: '🌊', description: 'Analyze recent order flow patterns' },
-        { id: 'price_impact', label: 'Price Impact', icon: '💰', description: 'Calculate price impact for different order sizes' },
-        { id: 'market_depth', label: 'Market Depth', icon: '📈', description: 'Visualize market depth and liquidity' }
+        { id: 'describe_image', label: 'Describe Image', icon: '🖼️', description: 'Get a detailed description of this image' },
+        { id: 'extract_text', label: 'Extract Text', icon: '📝', description: 'Extract any text from this image' },
+        { id: 'find_similar', label: 'Find Similar', icon: '🔍', description: 'Search for similar images' },
+        { id: 'analyze_content', label: 'Analyze Content', icon: '🔬', description: 'Analyze the image content and context' }
       ];
-    }
-    
-    if (context.tradingContext.isChart || context.tradingContext.isCandlestick) {
+      
+    case 'chart':
+    case 'canvas':
       return [
-        { id: 'pattern_recognition', label: 'Find Patterns', icon: '🔍', description: 'Identify chart patterns and formations' },
-        { id: 'trend_analysis', label: 'Trend Analysis', icon: '📈', description: 'Analyze current trend strength and direction' },
-        { id: 'support_resistance', label: 'Key Levels', icon: '🎯', description: 'Find support and resistance levels' },
-        { id: 'indicator_signals', label: 'Indicators', icon: '⚡', description: 'Calculate technical indicator values' }
+        { id: 'explain_chart', label: 'Explain Chart', icon: '📊', description: 'Explain what this chart shows' },
+        { id: 'extract_data', label: 'Extract Data', icon: '📋', description: 'Extract data points from this visualization' },
+        { id: 'analyze_trends', label: 'Analyze Trends', icon: '📈', description: 'Identify trends and patterns' },
+        { id: 'summarize_insights', label: 'Key Insights', icon: '💡', description: 'Get key insights from this data' }
       ];
-    }
+      
+    case 'table':
+      return [
+        { id: 'summarize_table', label: 'Summarize Data', icon: '📊', description: 'Get a summary of this table data' },
+        { id: 'extract_csv', label: 'Export CSV', icon: '📄', description: 'Convert to CSV format' },
+        { id: 'analyze_columns', label: 'Analyze Columns', icon: '🔍', description: 'Analyze relationships between columns' },
+        { id: 'find_patterns', label: 'Find Patterns', icon: '🎯', description: 'Identify patterns in the data' }
+      ];
+      
+    case 'numeric':
+      return [
+        { id: 'calculate', label: 'Calculate', icon: '🧮', description: 'Perform calculations with these numbers' },
+        { id: 'convert_units', label: 'Convert Units', icon: '🔄', description: 'Convert to different units or formats' },
+        { id: 'analyze_values', label: 'Analyze Values', icon: '📊', description: 'Statistical analysis of the numbers' },
+        { id: 'compare', label: 'Compare', icon: '⚖️', description: 'Compare with benchmarks or averages' }
+      ];
+      
+    case 'interactive':
+      return [
+        { id: 'explain_action', label: 'Explain Action', icon: '❓', description: 'What does this button/link do?' },
+        { id: 'find_alternatives', label: 'Alternatives', icon: '🔄', description: 'Find alternative ways to do this' },
+        { id: 'automate', label: 'Automate', icon: '🤖', description: 'Create automation for this action' },
+        { id: 'analyze_behavior', label: 'Analyze', icon: '🔍', description: 'Analyze the element behavior' }
+      ];
+      
+    case 'form':
+      return [
+        { id: 'explain_form', label: 'Explain Form', icon: '📝', description: 'Explain what this form does' },
+        { id: 'validate_fields', label: 'Validate', icon: '✅', description: 'Check form field requirements' },
+        { id: 'suggest_values', label: 'Suggest Values', icon: '💡', description: 'Suggest appropriate values' },
+        { id: 'extract_structure', label: 'Extract Structure', icon: '🏗️', description: 'Extract form structure and fields' }
+      ];
+      
+    default:
+      return [
+        { id: 'explain_element', label: 'Explain Element', icon: '💡', description: 'Explain what this element does' },
+        { id: 'extract_info', label: 'Extract Info', icon: '📋', description: 'Extract information from this element' },
+        { id: 'analyze_context', label: 'Analyze Context', icon: '🔍', description: 'Analyze element in page context' },
+        { id: 'suggest_actions', label: 'Suggest Actions', icon: '🎯', description: 'Suggest what to do with this' }
+      ];
   }
-  
-  // Chart/Graph actions
-  if (context.hasChart) {
-    return [
-      { id: 'explain_chart', label: 'Explain Chart', icon: '📊', description: 'Explain what this chart shows' },
-      { id: 'extract_data', label: 'Extract Data', icon: '📋', description: 'Extract data points from the chart' },
-      { id: 'find_trends', label: 'Find Trends', icon: '📈', description: 'Identify trends and patterns' },
-      { id: 'compare_values', label: 'Compare', icon: '⚖️', description: 'Compare different data points' }
-    ];
-  }
-  
-  // Table actions
-  if (context.hasTable) {
-    return [
-      { id: 'summarize_data', label: 'Summarize', icon: '📝', description: 'Summarize the table data' },
-      { id: 'calculate_stats', label: 'Statistics', icon: '🧮', description: 'Calculate statistics for numeric columns' },
-      { id: 'sort_filter', label: 'Sort & Filter', icon: '🔍', description: 'Suggest sorting and filtering options' },
-      { id: 'export_format', label: 'Export', icon: '📤', description: 'Convert to different formats' }
-    ];
-  }
-  
-  // Interactive element actions
-  if (context.isInteractive) {
-    return [
-      { id: 'explain_function', label: 'Explain', icon: '💡', description: 'Explain what this element does' },
-      { id: 'find_related', label: 'Find Related', icon: '🔗', description: 'Find related elements on page' },
-      { id: 'extract_info', label: 'Extract Info', icon: '📋', description: 'Extract key information' },
-      { id: 'analyze_behavior', label: 'Behavior', icon: '🎯', description: 'Analyze element behavior and events' }
-    ];
-  }
-  
-  // Default element actions
-  return [
-    { id: 'explain_element', label: 'Explain', icon: '💡', description: 'Explain this element\'s purpose' },
-    { id: 'extract_content', label: 'Extract', icon: '📋', description: 'Extract and format content' },
-    { id: 'find_similar', label: 'Find Similar', icon: '🔍', description: 'Find similar elements on page' },
-    { id: 'analyze_structure', label: 'Structure', icon: '🏗️', description: 'Analyze HTML structure and attributes' }
-  ];
 }
 
 // Analyze text and generate contextual actions
@@ -379,7 +375,7 @@ function getFallbackActions() {
 }
 
 // Execute the selected action
-async function executeAction(action, text, context, mode = 'text') {
+async function executeAction(action, text, context, isElementAnalysis = false) {
   if (!apiKey) {
     throw new Error('API key not configured. Please set it in the extension options.');
   }
@@ -387,10 +383,10 @@ async function executeAction(action, text, context, mode = 'text') {
   // Update usage stats
   updateActionStats(action.id);
   
-  // Generate prompt based on action and mode
-  const prompt = mode === 'element' ? 
-    generateElementPrompt(action, text, context) : 
-    generateDynamicPrompt(action, text, context);
+  // Generate prompt based on action
+  const prompt = isElementAnalysis 
+    ? generateElementPrompt(action, text, context)
+    : generateDynamicPrompt(action, text, context);
   
   try {
     const response = await fetch(CLAUDE_API_ENDPOINT, {
@@ -426,25 +422,20 @@ async function executeAction(action, text, context, mode = 'text') {
   }
 }
 
-// Generate prompt for element-based actions
-function generateElementPrompt(action, elementData, context) {
-  let parsedData;
-  try {
-    parsedData = JSON.parse(elementData);
-  } catch (e) {
-    parsedData = { text: elementData };
-  }
-  
-  const contextInfo = `Context: Element clicked on ${context.domain} (${context.title}).
-Element type: ${context.elementType}
-Element path: ${context.elementPath}
-${context.isTradingPlatform ? `Trading platform context: ${JSON.stringify(context.tradingContext)}` : ''}
+// Generate prompt for element analysis
+function generateElementPrompt(action, elementDescription, context) {
+  const elementInfo = context.elementContext ? `
+Element Information:
+- Type: ${context.elementContext.type}
+- Tag: ${context.elementContext.tagName}
+- Attributes: ${JSON.stringify(context.elementContext.attributes)}
+- Parent context: ${context.elementContext.parentContext}
+- Content: ${elementDescription}
+` : '';
 
-Element HTML: ${parsedData.html || ''}
-Element text: ${parsedData.text || ''}
-`;
+  const contextInfo = `Context: This element was clicked on ${context.domain} (${context.title}).${elementInfo}\n\n`;
   
-  return `${action.description}. Be specific and practical. Focus on the clicked element and its immediate context.\n\n${contextInfo}`;
+  return `${action.description}. Be concise and practical. Focus on the specific element that was clicked.\n\n${contextInfo}`;
 }
 
 // Generate dynamic prompt based on the action
