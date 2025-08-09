@@ -22,6 +22,30 @@
   transform: translateY(0) scale(1);
 }
 
+/* Loading State for Initial Palette */
+.sidekick-action-palette.sidekick-loading-state {
+  min-width: 150px;
+  justify-content: center;
+  align-items: center;
+  padding: 12px 20px;
+}
+
+.sidekick-loading-spinner {
+  width: 20px;
+  height: 20px;
+  border: 2px solid #f3f3f3;
+  border-top-color: #4285f4;
+  border-radius: 50%;
+  animation: sidekick-spin 0.8s linear infinite;
+  margin-right: 8px;
+}
+
+.sidekick-loading-text {
+  font-size: 13px;
+  color: #666;
+  font-weight: 500;
+}
+
 /* Action Buttons */
 .sidekick-action-button {
   display: flex;
@@ -39,6 +63,7 @@
   white-space: nowrap;
   outline: none;
   font-family: inherit;
+  position: relative;
 }
 
 .sidekick-action-button:hover {
@@ -58,6 +83,35 @@
   opacity: 0.5;
   cursor: not-allowed;
   transform: none;
+}
+
+/* Tooltip */
+.sidekick-action-button[title]:hover::after {
+  content: attr(title);
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%) translateY(-4px);
+  padding: 6px 10px;
+  background: rgba(0, 0, 0, 0.8);
+  color: white;
+  font-size: 12px;
+  font-weight: normal;
+  border-radius: 6px;
+  white-space: nowrap;
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  pointer-events: none;
+  opacity: 0;
+  animation: sidekick-tooltip-fade-in 0.2s ease-out 0.5s forwards;
+}
+
+@keyframes sidekick-tooltip-fade-in {
+  to {
+    opacity: 1;
+    transform: translateX(-50%) translateY(-8px);
+  }
 }
 
 /* Action Icons */
@@ -137,6 +191,14 @@
     border-color: #1a73e8;
     color: white;
   }
+  
+  .sidekick-loading-text {
+    color: #aaa;
+  }
+  
+  .sidekick-action-button[title]:hover::after {
+    background: rgba(0, 0, 0, 0.9);
+  }
 }
 
 /* Responsive Design */
@@ -149,5 +211,9 @@
   .sidekick-action-button {
     width: 100%;
     justify-content: center;
+  }
+  
+  .sidekick-action-button[title]:hover::after {
+    display: none; /* Hide tooltips on mobile */
   }
 } 

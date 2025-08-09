@@ -12,7 +12,6 @@ let apiKey = '';
 chrome.runtime.onInstalled.addListener(() => {
   console.log('Sidekick AI Extension installed');
   loadSettings();
-  initializeActionStats();
 });
 
 // Load settings from storage
@@ -22,34 +21,17 @@ async function loadSettings() {
   actionUsageStats = result.actionStats || {};
 }
 
-// Initialize action statistics
-function initializeActionStats() {
-  const defaultActions = [
-    'explain_code',
-    'refactor_code',
-    'add_docstrings',
-    'make_concise',
-    'professional_tone',
-    'key_points',
-    'quick_summary',
-    'save_to_notion'
-  ];
-  
-  defaultActions.forEach(action => {
-    if (!actionUsageStats[action]) {
-      actionUsageStats[action] = { clicks: 0, lastUsed: null };
-    }
-  });
-  
-  chrome.storage.sync.set({ actionStats: actionUsageStats });
-}
-
 // Listen for messages from content script
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.type === 'GET_ACTIONS') {
-    // Get prioritized actions based on context and usage
-    const actions = getPrioritizedActions(request.context, request.selectedText);
-    sendResponse({ actions });
+    // Get contextual actions based on the selected text
+    analyzeAndGenerateActions(request.selectedText, request.context)
+      .then(actions => sendResponse({ actions }))
+      .catch(error => {
+        console.error('Error generating actions:', error);
+        sendResponse({ actions: getFallbackActions() });
+      });
+    return true; // Will respond asynchronously
   } else if (request.type === 'EXECUTE_ACTION') {
     // Execute the selected action
     executeAction(request.action, request.text, request.context)
@@ -63,67 +45,187 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   }
 });
 
-// Get prioritized actions based on context and usage stats
-function getPrioritizedActions(context, selectedText) {
-  const actions = [];
+// Analyze text and generate contextual actions
+async function analyzeAndGenerateActions(selectedText, context) {
+  if (!apiKey) {
+    return getFallbackActions();
+  }
+
+  try {
+    // Use Claude to analyze the text and suggest relevant actions
+    const response = await fetch(CLAUDE_API_ENDPOINT, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+        'anthropic-dangerous-direct-browser-access': 'true'
+      },
+      body: JSON.stringify({
+        model: MODEL,
+        max_tokens: 500,
+        temperature: 0.3,
+        messages: [
+          {
+            role: 'user',
+            content: `Analyze this text and suggest exactly 4 contextual actions that would be most useful. 
+            
+Context:
+- Current URL: ${context.url}
+- Page title: ${context.title}
+- Selected text: "${selectedText.substring(0, 500)}${selectedText.length > 500 ? '...' : ''}"
+
+Return a JSON array with exactly 4 actions. Each action should have:
+- id: a unique identifier (snake_case)
+- label: short action label (max 3-4 words)
+- icon: a single emoji that represents the action
+- description: what the action will do (one sentence)
+
+Guidelines:
+- If it's code: suggest code-related actions (explain, refactor, debug, convert)
+- If it's an email/message: suggest communication actions (reply, summarize, tone change)
+- If it's an article/paragraph: suggest content actions (summarize, key points, translate)
+- If it's a data/numbers: suggest analysis actions (visualize, calculate, format)
+- If it's a list: suggest organization actions (categorize, prioritize, expand)
+- Be specific to the actual content, not generic
+- Actions should be immediately useful for this specific text
+
+Example response format:
+[
+  {"id": "explain_algorithm", "label": "Explain Algorithm", "icon": "🧮", "description": "Break down how this sorting algorithm works"},
+  {"id": "add_comments", "label": "Add Comments", "icon": "💬", "description": "Add inline comments explaining each section"},
+  {"id": "find_bugs", "label": "Find Bugs", "icon": "🐛", "description": "Identify potential issues or edge cases"},
+  {"id": "optimize_performance", "label": "Optimize Code", "icon": "⚡", "description": "Suggest performance improvements"}
+]
+
+Respond with ONLY the JSON array, no other text.`
+          }
+        ]
+      })
+    });
+
+    if (!response.ok) {
+      throw new Error(`API request failed: ${response.status}`);
+    }
+
+    const data = await response.json();
+    const content = data.content[0].text;
+    
+    try {
+      const actions = JSON.parse(content);
+      // Validate and ensure we have exactly 4 actions
+      if (Array.isArray(actions) && actions.length === 4) {
+        return actions;
+      }
+    } catch (parseError) {
+      console.error('Failed to parse actions:', parseError);
+    }
+  } catch (error) {
+    console.error('Error calling Claude API for actions:', error);
+  }
+
+  // If anything fails, return context-based fallback actions
+  return getSmartFallbackActions(selectedText, context);
+}
+
+// Get smart fallback actions based on simple heuristics
+function getSmartFallbackActions(selectedText, context) {
+  const text = selectedText.toLowerCase();
+  const url = context.url.toLowerCase();
   
-  // Determine context type (developer, writer, universal)
-  const isDeveloperContext = context.url.includes('github.com') || 
-                           context.url.includes('stackoverflow.com') ||
-                           context.url.includes('developer.mozilla.org') ||
-                           /\b(function|class|const|let|var|if|for|while)\b/.test(selectedText);
+  // Detect code patterns
+  const codePatterns = /\b(function|class|const|let|var|if|for|while|import|export|return|def|public|private|void)\b|[{}\[\]();]|=>|==|&&|\|\|/;
+  const isCode = codePatterns.test(selectedText);
   
-  const isWriterContext = context.url.includes('gmail.com') ||
-                         context.url.includes('docs.google.com') ||
-                         context.url.includes('notion.so') ||
-                         selectedText.split(' ').length > 20;
+  // Detect email patterns
+  const emailPatterns = /\b(dear|hi|hello|regards|sincerely|best|thanks)\b|@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/;
+  const isEmail = emailPatterns.test(text) || url.includes('mail') || url.includes('gmail');
   
-  // Developer actions
-  if (isDeveloperContext) {
-    actions.push(
-      { id: 'explain_code', label: '📜 Explain this Code', icon: '📜' },
-      { id: 'refactor_code', label: '♻️ Refactor for Readability', icon: '♻️' },
-      { id: 'add_docstrings', label: '💬 Add Docstrings', icon: '💬' }
-    );
+  // Detect numeric/data patterns
+  const hasNumbers = /\d+/.test(selectedText) && selectedText.split(/\s+/).filter(word => /^\d+$/.test(word)).length > 3;
+  
+  // Detect list patterns
+  const isList = /^[\d\-\*•]\s|^\d+\.|^[a-z]\)|^[A-Z]\)/.test(selectedText.trim()) || selectedText.split('\n').length > 3;
+  
+  // Word count for long text detection
+  const wordCount = selectedText.split(/\s+/).filter(word => word.length > 0).length;
+  const isLongText = wordCount > 50;
+  
+  if (isCode) {
+    return [
+      { id: 'explain_code', label: 'Explain Code', icon: '📖', description: 'Explain what this code does in simple terms' },
+      { id: 'find_issues', label: 'Find Issues', icon: '🔍', description: 'Identify bugs or potential problems' },
+      { id: 'add_comments', label: 'Add Comments', icon: '💬', description: 'Add helpful inline comments' },
+      { id: 'refactor', label: 'Refactor', icon: '♻️', description: 'Improve code structure and readability' }
+    ];
   }
   
-  // Writer actions
-  if (isWriterContext) {
-    actions.push(
-      { id: 'make_concise', label: '✂️ Make Concise', icon: '✂️' },
-      { id: 'professional_tone', label: '👔 Professional Tone', icon: '👔' },
-      { id: 'key_points', label: '📝 Key Points', icon: '📝' }
-    );
+  if (isEmail) {
+    return [
+      { id: 'draft_reply', label: 'Draft Reply', icon: '📧', description: 'Generate a professional reply' },
+      { id: 'summarize', label: 'Summarize', icon: '📝', description: 'Get the key points quickly' },
+      { id: 'change_tone', label: 'Change Tone', icon: '🎭', description: 'Make more formal or casual' },
+      { id: 'action_items', label: 'Action Items', icon: '✅', description: 'Extract tasks and next steps' }
+    ];
   }
   
-  // Universal actions
-  actions.push(
-    { id: 'quick_summary', label: '🔍 Quick Summary', icon: '🔍' },
-    { id: 'save_to_notion', label: '💾 Save to Notion', icon: '💾' }
-  );
+  if (hasNumbers) {
+    return [
+      { id: 'analyze_data', label: 'Analyze Data', icon: '📊', description: 'Find patterns and insights' },
+      { id: 'create_table', label: 'Format Table', icon: '📋', description: 'Organize data into a clean table' },
+      { id: 'calculate', label: 'Calculate', icon: '🧮', description: 'Perform calculations on the numbers' },
+      { id: 'visualize', label: 'Visualize', icon: '📈', description: 'Suggest chart types for this data' }
+    ];
+  }
   
-  // Sort by usage frequency
-  actions.sort((a, b) => {
-    const aStats = actionUsageStats[a.id] || { clicks: 0 };
-    const bStats = actionUsageStats[b.id] || { clicks: 0 };
-    return bStats.clicks - aStats.clicks;
-  });
+  if (isList) {
+    return [
+      { id: 'organize', label: 'Organize', icon: '📂', description: 'Group and categorize items' },
+      { id: 'prioritize', label: 'Prioritize', icon: '🎯', description: 'Rank items by importance' },
+      { id: 'expand', label: 'Expand Items', icon: '🔍', description: 'Add details to each item' },
+      { id: 'convert_tasks', label: 'Make Tasks', icon: '☑️', description: 'Convert to actionable tasks' }
+    ];
+  }
   
-  // Return top 4 actions
-  return actions.slice(0, 4);
+  if (isLongText) {
+    return [
+      { id: 'summarize', label: 'Summarize', icon: '📄', description: 'Get the main points quickly' },
+      { id: 'key_points', label: 'Key Points', icon: '🎯', description: 'Extract important information' },
+      { id: 'simplify', label: 'Simplify', icon: '✂️', description: 'Make it easier to understand' },
+      { id: 'questions', label: 'Questions', icon: '❓', description: 'Generate questions about this content' }
+    ];
+  }
+  
+  // Default actions for general text
+  return [
+    { id: 'summarize', label: 'Summarize', icon: '📝', description: 'Create a brief summary' },
+    { id: 'improve', label: 'Improve', icon: '✨', description: 'Enhance clarity and impact' },
+    { id: 'translate', label: 'Translate', icon: '🌐', description: 'Translate to another language' },
+    { id: 'explain', label: 'Explain', icon: '💡', description: 'Explain in simple terms' }
+  ];
+}
+
+// Get basic fallback actions
+function getFallbackActions() {
+  return [
+    { id: 'summarize', label: 'Summarize', icon: '📝', description: 'Create a brief summary' },
+    { id: 'explain', label: 'Explain', icon: '💡', description: 'Explain this content' },
+    { id: 'improve', label: 'Improve', icon: '✨', description: 'Enhance this text' },
+    { id: 'key_points', label: 'Key Points', icon: '🎯', description: 'Extract main points' }
+  ];
 }
 
 // Execute the selected action
-async function executeAction(actionId, text, context) {
+async function executeAction(action, text, context) {
   if (!apiKey) {
     throw new Error('API key not configured. Please set it in the extension options.');
   }
   
   // Update usage stats
-  updateActionStats(actionId);
+  updateActionStats(action.id);
   
   // Generate prompt based on action
-  const prompt = generatePrompt(actionId, text, context);
+  const prompt = generateDynamicPrompt(action, text, context);
   
   try {
     const response = await fetch(CLAUDE_API_ENDPOINT, {
@@ -132,7 +234,7 @@ async function executeAction(actionId, text, context) {
         'Content-Type': 'application/json',
         'x-api-key': apiKey,
         'anthropic-version': '2023-06-01',
-        'anthropic-dangerous-direct-browser-access': 'true'  // Required for browser-based requests
+        'anthropic-dangerous-direct-browser-access': 'true'
       },
       body: JSON.stringify({
         model: MODEL,
@@ -159,20 +261,11 @@ async function executeAction(actionId, text, context) {
   }
 }
 
-// Generate appropriate prompt for each action
-function generatePrompt(actionId, text, context) {
-  const prompts = {
-    explain_code: `Explain the following code in simple terms, focusing on what it does and how it works:\n\n${text}`,
-    refactor_code: `Refactor the following code for better readability and maintainability. Keep the same functionality:\n\n${text}`,
-    add_docstrings: `Add comprehensive docstrings/comments to the following code:\n\n${text}`,
-    make_concise: `Rewrite the following text to be more concise while preserving the key message:\n\n${text}`,
-    professional_tone: `Rewrite the following text in a professional, business-appropriate tone:\n\n${text}`,
-    key_points: `Extract and list the key points from the following text as bullet points:\n\n${text}`,
-    quick_summary: `Provide a brief summary of the following text in 2-3 sentences:\n\n${text}`,
-    save_to_notion: `Format the following text for saving to Notion with appropriate headings and structure:\n\n${text}`
-  };
+// Generate dynamic prompt based on the action
+function generateDynamicPrompt(action, text, context) {
+  const contextInfo = `Context: This text was selected from ${context.domain} (${context.title}).\n\n`;
   
-  return prompts[actionId] || `Process the following text:\n\n${text}`;
+  return `${action.description}. Be concise and practical.\n\n${contextInfo}Text:\n${text}`;
 }
 
 // Update action usage statistics

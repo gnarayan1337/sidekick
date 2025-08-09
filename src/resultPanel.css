@@ -43,8 +43,7 @@
   gap: 8px;
 }
 
-.sidekick-result-title::before {
-  content: '✨';
+.sidekick-result-icon {
   font-size: 18px;
 }
 
@@ -96,12 +95,15 @@
   border-radius: 8px;
   overflow-x: auto;
   margin: 12px 0;
+  border: 1px solid #e0e0e0;
 }
 
 .sidekick-result-content pre code {
   background: none;
   padding: 0;
-  color: inherit;
+  color: #333;
+  display: block;
+  white-space: pre;
 }
 
 .sidekick-result-content strong {
@@ -113,7 +115,8 @@
   font-style: italic;
 }
 
-.sidekick-result-content ul {
+.sidekick-result-content ul,
+.sidekick-result-content ol {
   margin: 12px 0;
   padding-left: 24px;
 }
@@ -216,6 +219,11 @@
   
   .sidekick-result-content pre {
     background: #2d2d2d;
+    border-color: #3d3d3d;
+  }
+  
+  .sidekick-result-content pre code {
+    color: #e0e0e0;
   }
   
   .sidekick-result-content strong {

@@ -1,17 +1,5 @@
 // Options page JavaScript for Sidekick AI
 
-// Action metadata
-const actionMetadata = {
-  explain_code: { icon: '📜', label: 'Explain Code' },
-  refactor_code: { icon: '♻️', label: 'Refactor Code' },
-  add_docstrings: { icon: '💬', label: 'Add Docstrings' },
-  make_concise: { icon: '✂️', label: 'Make Concise' },
-  professional_tone: { icon: '👔', label: 'Professional Tone' },
-  key_points: { icon: '📝', label: 'Key Points' },
-  quick_summary: { icon: '🔍', label: 'Quick Summary' },
-  save_to_notion: { icon: '💾', label: 'Save to Notion' }
-};
-
 // DOM elements
 const apiKeyInput = document.getElementById('apiKey');
 const saveButton = document.getElementById('saveButton');
@@ -33,6 +21,8 @@ async function loadSettings() {
   // Display usage statistics
   if (result.actionStats) {
     displayStats(result.actionStats);
+  } else {
+    displayEmptyStats();
   }
 }
 
@@ -139,15 +129,23 @@ function displayStats(actionStats) {
   const sortedActions = Object.entries(actionStats)
     .sort((a, b) => (b[1].clicks || 0) - (a[1].clicks || 0));
   
-  sortedActions.forEach(([actionId, stats]) => {
-    const metadata = actionMetadata[actionId];
-    if (!metadata) return;
-    
+  if (sortedActions.length === 0) {
+    displayEmptyStats();
+    return;
+  }
+  
+  // Display top actions
+  sortedActions.slice(0, 8).forEach(([actionId, stats]) => {
     const statItem = document.createElement('div');
     statItem.className = 'stat-item';
+    
+    // Try to extract icon from the action ID or use a default
+    const icon = stats.icon || getIconForAction(actionId);
+    const label = formatActionLabel(actionId);
+    
     statItem.innerHTML = `
-      <div class="icon">${metadata.icon}</div>
-      <div class="label">${metadata.label}</div>
+      <div class="icon">${icon}</div>
+      <div class="label">${label}</div>
       <div class="value">${stats.clicks || 0}</div>
     `;
     
@@ -166,16 +164,54 @@ function displayStats(actionStats) {
   statsGrid.appendChild(totalItem);
 }
 
+// Display empty stats message
+function displayEmptyStats() {
+  statsGrid.innerHTML = `
+    <div style="grid-column: 1 / -1; text-align: center; color: #666; padding: 20px;">
+      <div style="font-size: 48px; opacity: 0.3; margin-bottom: 10px;">📊</div>
+      <p>No usage data yet. Start using Sidekick AI to see your statistics!</p>
+    </div>
+  `;
+}
+
+// Get icon for action based on ID
+function getIconForAction(actionId) {
+  const iconMap = {
+    explain: '💡',
+    summarize: '📝',
+    refactor: '♻️',
+    translate: '🌐',
+    improve: '✨',
+    analyze: '📊',
+    format: '📋',
+    reply: '📧',
+    calculate: '🧮',
+    organize: '📂'
+  };
+  
+  // Try to find a matching keyword in the action ID
+  for (const [key, icon] of Object.entries(iconMap)) {
+    if (actionId.toLowerCase().includes(key)) {
+      return icon;
+    }
+  }
+  
+  return '🎯'; // Default icon
+}
+
+// Format action label from ID
+function formatActionLabel(actionId) {
+  return actionId
+    .split('_')
+    .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(' ');
+}
+
 // Reset statistics
 resetStatsButton.addEventListener('click', async () => {
   if (confirm('Are you sure you want to reset all usage statistics?')) {
-    const freshStats = {};
-    Object.keys(actionMetadata).forEach(action => {
-      freshStats[action] = { clicks: 0, lastUsed: null };
-    });
-    
-    await chrome.storage.sync.set({ actionStats: freshStats });
-    displayStats(freshStats);
+    await chrome.storage.sync.set({ actionStats: {} });
+    displayEmptyStats();
     showStatus('Statistics reset successfully', 'success');
   }
 });

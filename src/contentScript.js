@@ -5,6 +5,8 @@ let selectedText = '';
 let actionPalette = null;
 let resultPanel = null;
 let selectionRect = null;
+let currentActions = [];
+let isLoadingActions = false;
 
 // Initialize content script
 (function() {
@@ -23,12 +25,23 @@ let selectionRect = null;
 
 // Handle text selection
 function handleTextSelection(event) {
+  // Ignore if clicking on our own elements
+  if (event.target.closest('[data-sidekick]')) {
+    return;
+  }
+  
   const selection = window.getSelection();
   const text = selection.toString().trim();
   
   if (text.length > 0 && text !== selectedText) {
     selectedText = text;
-    selectionRect = selection.getRangeAt(0).getBoundingClientRect();
+    
+    try {
+      selectionRect = selection.getRangeAt(0).getBoundingClientRect();
+    } catch (e) {
+      // Selection might be invalid, ignore
+      return;
+    }
     
     // Small delay to ensure selection is complete
     setTimeout(() => {
@@ -36,7 +49,7 @@ function handleTextSelection(event) {
         showActionPalette();
       }
     }, 200);
-  } else if (text.length === 0) {
+  } else if (text.length === 0 && !isLoadingActions) {
     hideActionPalette();
   }
 }
@@ -46,7 +59,7 @@ function handleSelectionChange() {
   const selection = window.getSelection();
   const text = selection.toString().trim();
   
-  if (text.length === 0) {
+  if (text.length === 0 && !isLoadingActions) {
     selectedText = '';
     hideActionPalette();
   }
@@ -54,6 +67,12 @@ function handleSelectionChange() {
 
 // Show the action palette
 async function showActionPalette() {
+  // Set loading flag
+  isLoadingActions = true;
+  
+  // Show loading state while fetching actions
+  showLoadingPalette();
+  
   // Get context information
   const context = {
     url: window.location.href,
@@ -61,23 +80,57 @@ async function showActionPalette() {
     domain: window.location.hostname
   };
   
-  // Request prioritized actions from background script
+  // Request contextual actions from background script
   chrome.runtime.sendMessage({
     type: 'GET_ACTIONS',
     context: context,
     selectedText: selectedText
   }, (response) => {
+    isLoadingActions = false;
+    
     if (response && response.actions) {
+      currentActions = response.actions;
       createActionPalette(response.actions);
       positionPalette();
+    } else {
+      // If no response or error, hide the palette
+      hideActionPalette();
     }
   });
 }
 
+// Show loading palette
+function showLoadingPalette() {
+  hideActionPalette();
+  
+  actionPalette = document.createElement('div');
+  actionPalette.className = 'sidekick-action-palette sidekick-loading-state';
+  actionPalette.setAttribute('data-sidekick', 'true');
+  actionPalette.innerHTML = `
+    <div class="sidekick-loading-spinner"></div>
+    <span class="sidekick-loading-text">Analyzing...</span>
+  `;
+  
+  document.body.appendChild(actionPalette);
+  positionPalette();
+  
+  setTimeout(() => {
+    if (actionPalette) {
+      actionPalette.classList.add('sidekick-show');
+    }
+  }, 10);
+}
+
 // Create the action palette UI
 function createActionPalette(actions) {
+  // Store current position before removing old palette
+  const currentTop = actionPalette ? actionPalette.style.top : null;
+  const currentLeft = actionPalette ? actionPalette.style.left : null;
+  
   // Remove existing palette if any
-  hideActionPalette();
+  if (actionPalette) {
+    actionPalette.remove();
+  }
   
   // Create palette container
   actionPalette = document.createElement('div');
@@ -89,16 +142,35 @@ function createActionPalette(actions) {
     const button = document.createElement('button');
     button.className = 'sidekick-action-button';
     button.setAttribute('data-action', action.id);
+    button.setAttribute('data-sidekick', 'true');
+    button.setAttribute('title', action.description); // Tooltip
     button.innerHTML = `
       <span class="sidekick-action-icon">${action.icon}</span>
       <span class="sidekick-action-label">${action.label}</span>
     `;
-    button.addEventListener('click', () => executeAction(action.id));
+    button.addEventListener('click', (e) => {
+      e.stopPropagation();
+      executeAction(action);
+    });
     actionPalette.appendChild(button);
   });
   
   // Add to page
   document.body.appendChild(actionPalette);
+  
+  // Restore position if we had one
+  if (currentTop && currentLeft) {
+    actionPalette.style.top = currentTop;
+    actionPalette.style.left = currentLeft;
+    actionPalette.classList.add('sidekick-show');
+  } else {
+    positionPalette();
+    setTimeout(() => {
+      if (actionPalette) {
+        actionPalette.classList.add('sidekick-show');
+      }
+    }, 10);
+  }
 }
 
 // Position the palette near the selected text
@@ -106,7 +178,7 @@ function positionPalette() {
   if (!actionPalette || !selectionRect) return;
   
   const paletteHeight = 50; // Approximate height
-  const paletteWidth = actionPalette.offsetWidth;
+  const paletteWidth = actionPalette.offsetWidth || 200; // Fallback width
   const padding = 10;
   
   // Calculate position
@@ -127,15 +199,10 @@ function positionPalette() {
   // Apply position
   actionPalette.style.top = `${top}px`;
   actionPalette.style.left = `${left}px`;
-  
-  // Add show animation
-  setTimeout(() => {
-    actionPalette.classList.add('sidekick-show');
-  }, 10);
 }
 
 // Execute selected action
-function executeAction(actionId) {
+function executeAction(action) {
   if (!selectedText) return;
   
   // Show loading state
@@ -151,16 +218,16 @@ function executeAction(actionId) {
   // Send request to background script
   chrome.runtime.sendMessage({
     type: 'EXECUTE_ACTION',
-    action: actionId,
+    action: action,
     text: selectedText,
     context: context
   }, (response) => {
     hideLoadingState();
     
-    if (response.success) {
-      showResultPanel(response.result);
+    if (response && response.success) {
+      showResultPanel(response.result, action);
     } else {
-      showError(response.error);
+      showError(response ? response.error : 'No response from extension');
     }
   });
 }
@@ -184,7 +251,7 @@ function hideLoadingState() {
 }
 
 // Show result panel
-function showResultPanel(result) {
+function showResultPanel(result, action) {
   // Hide action palette
   hideActionPalette();
   
@@ -196,13 +263,16 @@ function showResultPanel(result) {
   // Add content
   resultPanel.innerHTML = `
     <div class="sidekick-result-header">
-      <span class="sidekick-result-title">Sidekick AI Result</span>
-      <button class="sidekick-result-close" aria-label="Close">×</button>
+      <span class="sidekick-result-title">
+        <span class="sidekick-result-icon">${action.icon}</span>
+        ${action.label} Result
+      </span>
+      <button class="sidekick-result-close" aria-label="Close" data-sidekick="true">×</button>
     </div>
     <div class="sidekick-result-content">${formatResult(result)}</div>
     <div class="sidekick-result-actions">
-      <button class="sidekick-result-copy">Copy to Clipboard</button>
-      <button class="sidekick-result-insert">Insert at Cursor</button>
+      <button class="sidekick-result-copy" data-sidekick="true">Copy to Clipboard</button>
+      <button class="sidekick-result-insert" data-sidekick="true">Insert at Cursor</button>
     </div>
   `;
   
@@ -216,7 +286,9 @@ function showResultPanel(result) {
   positionResultPanel();
   
   setTimeout(() => {
-    resultPanel.classList.add('sidekick-show');
+    if (resultPanel) {
+      resultPanel.classList.add('sidekick-show');
+    }
   }, 10);
 }
 
@@ -225,11 +297,14 @@ function formatResult(result) {
   // Convert markdown-style formatting to HTML
   return result
     .replace(/\n/g, '<br>')
+    .replace(/```([\s\S]*?)```/g, '<pre><code>$1</code></pre>')
     .replace(/`([^`]+)`/g, '<code>$1</code>')
     .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
     .replace(/\*([^*]+)\*/g, '<em>$1</em>')
     .replace(/^- (.+)$/gm, '<li>$1</li>')
-    .replace(/(<li>.*<\/li>)/s, '<ul>$1</ul>');
+    .replace(/(<li>.*<\/li>)/s, '<ul>$1</ul>')
+    .replace(/^\d+\. (.+)$/gm, '<li>$1</li>')
+    .replace(/(<li>.*<\/li>)/s, '<ol>$1</ol>');
 }
 
 // Position result panel
@@ -322,8 +397,10 @@ function hideActionPalette() {
   if (actionPalette) {
     actionPalette.classList.remove('sidekick-show');
     setTimeout(() => {
-      actionPalette.remove();
-      actionPalette = null;
+      if (actionPalette) {
+        actionPalette.remove();
+        actionPalette = null;
+      }
     }, 300);
   }
 }
@@ -333,21 +410,32 @@ function hideResultPanel() {
   if (resultPanel) {
     resultPanel.classList.remove('sidekick-show');
     setTimeout(() => {
-      resultPanel.remove();
-      resultPanel = null;
+      if (resultPanel) {
+        resultPanel.remove();
+        resultPanel = null;
+      }
     }, 300);
   }
 }
 
 // Handle clicks outside palette
 function handleClickOutside(event) {
-  if (actionPalette && !actionPalette.contains(event.target) && 
-      !event.target.hasAttribute('data-sidekick')) {
+  // Don't hide if we're loading actions
+  if (isLoadingActions) {
+    return;
+  }
+  
+  // Don't hide if clicking on any sidekick element
+  if (event.target.closest('[data-sidekick]')) {
+    return;
+  }
+  
+  // Only hide if clicking outside both palette and result panel
+  if (actionPalette && !actionPalette.contains(event.target)) {
     hideActionPalette();
   }
   
-  if (resultPanel && !resultPanel.contains(event.target) && 
-      !event.target.hasAttribute('data-sidekick')) {
+  if (resultPanel && !resultPanel.contains(event.target)) {
     hideResultPanel();
   }
 }
