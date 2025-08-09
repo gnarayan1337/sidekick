@@ -7,8 +7,6 @@ let resultPanel = null;
 let selectionRect = null;
 let currentActions = [];
 let isLoadingActions = false;
-let clickAnalysisMode = false;
-let lastClickTarget = null;
 
 // Initialize content script
 (function() {
@@ -18,133 +16,12 @@ let lastClickTarget = null;
   document.addEventListener('mouseup', handleTextSelection);
   document.addEventListener('selectionchange', handleSelectionChange);
   
-  // Listen for alt+click to analyze elements
-  document.addEventListener('click', handleElementClick);
-  
   // Listen for clicks outside palette to close it
   document.addEventListener('click', handleClickOutside);
   
   // Clean up on page unload
   window.addEventListener('beforeunload', cleanup);
 })();
-
-// Handle element click for analysis
-function handleElementClick(event) {
-  // Check if Alt key is pressed for element analysis
-  if (event.altKey && !event.target.closest('[data-sidekick]')) {
-    event.preventDefault();
-    event.stopPropagation();
-    
-    // Clear any text selection
-    window.getSelection().removeAllRanges();
-    selectedText = '';
-    
-    // Set click analysis mode
-    clickAnalysisMode = true;
-    lastClickTarget = event.target;
-    
-    // Get element context
-    const elementContext = extractElementContext(event.target);
-    
-    // Position based on click
-    const clickRect = {
-      top: event.pageY - window.scrollY - 10,
-      bottom: event.pageY - window.scrollY + 10,
-      left: event.pageX - window.scrollX - 10,
-      right: event.pageX - window.scrollX + 10,
-      width: 20,
-      height: 20
-    };
-    selectionRect = clickRect;
-    
-    // Show palette for element
-    showElementActionPalette(elementContext);
-  }
-}
-
-// Extract context from clicked element
-function extractElementContext(element) {
-  const context = {
-    tagName: element.tagName.toLowerCase(),
-    className: element.className,
-    id: element.id,
-    text: element.textContent.substring(0, 200).trim(),
-    attributes: {},
-    parentContext: '',
-    type: 'unknown'
-  };
-  
-  // Get relevant attributes
-  ['src', 'href', 'alt', 'title', 'data-type', 'role', 'aria-label'].forEach(attr => {
-    if (element.hasAttribute(attr)) {
-      context.attributes[attr] = element.getAttribute(attr);
-    }
-  });
-  
-  // Get parent context
-  if (element.parentElement) {
-    context.parentContext = element.parentElement.className || element.parentElement.tagName.toLowerCase();
-  }
-  
-  // Detect element type
-  if (element.tagName === 'IMG' || element.querySelector('img')) {
-    context.type = 'image';
-  } else if (element.tagName === 'VIDEO' || element.querySelector('video')) {
-    context.type = 'video';
-  } else if (element.tagName === 'TABLE' || element.closest('table')) {
-    context.type = 'table';
-  } else if (element.tagName === 'CANVAS') {
-    context.type = 'canvas';
-  } else if (element.closest('.chart, .graph, [class*="chart"], [class*="graph"]')) {
-    context.type = 'chart';
-  } else if (element.tagName === 'BUTTON' || element.tagName === 'A') {
-    context.type = 'interactive';
-  } else if (element.closest('form')) {
-    context.type = 'form';
-  } else if (/\d+[\.\,]\d+/.test(element.textContent)) {
-    context.type = 'numeric';
-  } else if (element.querySelector('ul, ol') || element.tagName === 'LI') {
-    context.type = 'list';
-  }
-  
-  return context;
-}
-
-// Show action palette for clicked element
-async function showElementActionPalette(elementContext) {
-  // Set loading flag
-  isLoadingActions = true;
-  
-  // Show loading state while fetching actions
-  showLoadingPalette();
-  
-  // Get page context
-  const context = {
-    url: window.location.href,
-    title: document.title,
-    domain: window.location.hostname,
-    elementContext: elementContext
-  };
-  
-  // Request contextual actions from background script
-  chrome.runtime.sendMessage({
-    type: 'GET_ACTIONS',
-    context: context,
-    selectedText: elementContext.text || `[${elementContext.type} element: ${elementContext.tagName}]`,
-    isElementAnalysis: true
-  }, (response) => {
-    isLoadingActions = false;
-    
-    if (response && response.actions) {
-      currentActions = response.actions;
-      createActionPalette(response.actions);
-      positionPalette();
-    } else {
-      // If no response or error, hide the palette
-      hideActionPalette();
-    }
-  });
-}
 
 // Handle text selection
 function handleTextSelection(event) {
@@ -153,17 +30,11 @@ function handleTextSelection(event) {
     return;
   }
   
-  // Ignore if Alt key is pressed (element analysis mode)
-  if (event.altKey) {
-    return;
-  }
-  
   const selection = window.getSelection();
   const text = selection.toString().trim();
   
   if (text.length > 0 && text !== selectedText) {
     selectedText = text;
-    clickAnalysisMode = false;
     
     try {
       selectionRect = selection.getRangeAt(0).getBoundingClientRect();
@@ -188,7 +59,7 @@ function handleSelectionChange() {
   const selection = window.getSelection();
   const text = selection.toString().trim();
   
-  if (text.length === 0 && !isLoadingActions && !clickAnalysisMode) {
+  if (text.length === 0 && !isLoadingActions) {
     selectedText = '';
     hideActionPalette();
   }
@@ -198,7 +69,6 @@ function handleSelectionChange() {
 async function showActionPalette() {
   // Set loading flag
   isLoadingActions = true;
-  clickAnalysisMode = false;
   
   // Show loading state while fetching actions
   showLoadingPalette();
@@ -214,8 +84,7 @@ async function showActionPalette() {
   chrome.runtime.sendMessage({
     type: 'GET_ACTIONS',
     context: context,
-    selectedText: selectedText,
-    isElementAnalysis: false
+    selectedText: selectedText
   }, (response) => {
     isLoadingActions = false;
     
@@ -268,14 +137,6 @@ function createActionPalette(actions) {
   actionPalette.className = 'sidekick-action-palette';
   actionPalette.setAttribute('data-sidekick', 'true');
   
-  // Add mode indicator for element analysis
-  if (clickAnalysisMode) {
-    const modeIndicator = document.createElement('div');
-    modeIndicator.className = 'sidekick-mode-indicator';
-    modeIndicator.innerHTML = '🎯 Element Analysis';
-    actionPalette.appendChild(modeIndicator);
-  }
-  
   // Create action buttons
   actions.forEach(action => {
     const button = document.createElement('button');
@@ -316,7 +177,7 @@ function createActionPalette(actions) {
 function positionPalette() {
   if (!actionPalette || !selectionRect) return;
   
-  const paletteHeight = clickAnalysisMode ? 70 : 50; // Extra height for mode indicator
+  const paletteHeight = 50; // Approximate height
   const paletteWidth = actionPalette.offsetWidth || 200; // Fallback width
   const padding = 10;
   
@@ -342,7 +203,7 @@ function positionPalette() {
 
 // Execute selected action
 function executeAction(action) {
-  if (!selectedText && !clickAnalysisMode) return;
+  if (!selectedText) return;
   
   // Show loading state
   showLoadingState();
@@ -354,18 +215,12 @@ function executeAction(action) {
     domain: window.location.hostname
   };
   
-  // Add element context if in click analysis mode
-  if (clickAnalysisMode && lastClickTarget) {
-    context.elementContext = extractElementContext(lastClickTarget);
-  }
-  
   // Send request to background script
   chrome.runtime.sendMessage({
     type: 'EXECUTE_ACTION',
     action: action,
-    text: selectedText || `Analyzing ${context.elementContext?.type || 'element'}: ${context.elementContext?.text || ''}`,
-    context: context,
-    isElementAnalysis: clickAnalysisMode
+    text: selectedText,
+    context: context
   }, (response) => {
     hideLoadingState();
     
@@ -548,8 +403,6 @@ function hideActionPalette() {
       }
     }, 300);
   }
-  clickAnalysisMode = false;
-  lastClickTarget = null;
 }
 
 // Hide result panel
@@ -574,11 +427,6 @@ function handleClickOutside(event) {
   
   // Don't hide if clicking on any sidekick element
   if (event.target.closest('[data-sidekick]')) {
-    return;
-  }
-  
-  // Don't hide if Alt key is pressed (starting new analysis)
-  if (event.altKey) {
     return;
   }
   

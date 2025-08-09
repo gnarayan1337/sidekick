@@ -24,26 +24,17 @@ async function loadSettings() {
 // Listen for messages from content script
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.type === 'GET_ACTIONS') {
-    // Get contextual actions based on the selected text or element
-    if (request.isElementAnalysis) {
-      analyzeAndGenerateElementActions(request.selectedText, request.context)
-        .then(actions => sendResponse({ actions }))
-        .catch(error => {
-          console.error('Error generating element actions:', error);
-          sendResponse({ actions: getElementFallbackActions(request.context.elementContext) });
-        });
-    } else {
-      analyzeAndGenerateActions(request.selectedText, request.context)
-        .then(actions => sendResponse({ actions }))
-        .catch(error => {
-          console.error('Error generating actions:', error);
-          sendResponse({ actions: getFallbackActions() });
-        });
-    }
+    // Get contextual actions based on the selected text
+    analyzeAndGenerateActions(request.selectedText, request.context)
+      .then(actions => sendResponse({ actions }))
+      .catch(error => {
+        console.error('Error generating actions:', error);
+        sendResponse({ actions: getFallbackActions() });
+      });
     return true; // Will respond asynchronously
   } else if (request.type === 'EXECUTE_ACTION') {
     // Execute the selected action
-    executeAction(request.action, request.text, request.context, request.isElementAnalysis)
+    executeAction(request.action, request.text, request.context)
       .then(result => sendResponse({ success: true, result }))
       .catch(error => sendResponse({ success: false, error: error.message }));
     return true; // Will respond asynchronously
@@ -53,156 +44,6 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     sendResponse({ success: true });
   }
 });
-
-// Analyze element and generate contextual actions
-async function analyzeAndGenerateElementActions(elementDescription, context) {
-  if (!apiKey) {
-    return getElementFallbackActions(context.elementContext);
-  }
-
-  try {
-    // Use Claude to analyze the element and suggest relevant actions
-    const response = await fetch(CLAUDE_API_ENDPOINT, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': apiKey,
-        'anthropic-version': '2023-06-01',
-        'anthropic-dangerous-direct-browser-access': 'true'
-      },
-      body: JSON.stringify({
-        model: MODEL,
-        max_tokens: 500,
-        temperature: 0.3,
-        messages: [
-          {
-            role: 'user',
-            content: `Analyze this clicked element and suggest exactly 4 contextual actions that would be most useful. 
-            
-Context:
-- Current URL: ${context.url}
-- Page title: ${context.title}
-- Element type: ${context.elementContext.type}
-- Element tag: ${context.elementContext.tagName}
-- Element text/content: "${elementDescription}"
-- Element attributes: ${JSON.stringify(context.elementContext.attributes)}
-
-Return a JSON array with exactly 4 actions. Each action should have:
-- id: a unique identifier (snake_case)
-- label: short action label (max 3-4 words)
-- icon: a single emoji that represents the action
-- description: what the action will do (one sentence)
-
-Guidelines:
-- If it's an image: suggest analysis, extraction, editing, or search actions
-- If it's a chart/graph: suggest data extraction, explanation, trend analysis
-- If it's a table: suggest sorting, filtering, exporting, analysis
-- If it's a button/link: suggest explanation, automation, or alternative actions
-- If it's numeric data: suggest calculations, comparisons, visualizations
-- If it's a form element: suggest validation, auto-fill, or extraction
-- Be specific to the actual element and its context on this page
-
-Example response format:
-[
-  {"id": "analyze_chart", "label": "Analyze Trends", "icon": "📈", "description": "Extract and explain the data trends in this chart"},
-  {"id": "export_data", "label": "Export Data", "icon": "📊", "description": "Extract the underlying data into a table format"},
-  {"id": "compare_periods", "label": "Compare Periods", "icon": "🔄", "description": "Compare different time periods in this visualization"},
-  {"id": "explain_metrics", "label": "Explain Metrics", "icon": "💡", "description": "Explain what these metrics mean and their significance"}
-]
-
-Respond with ONLY the JSON array, no other text.`
-          }
-        ]
-      })
-    });
-
-    if (!response.ok) {
-      throw new Error(`API request failed: ${response.status}`);
-    }
-
-    const data = await response.json();
-    const content = data.content[0].text;
-    
-    try {
-      const actions = JSON.parse(content);
-      // Validate and ensure we have exactly 4 actions
-      if (Array.isArray(actions) && actions.length === 4) {
-        return actions;
-      }
-    } catch (parseError) {
-      console.error('Failed to parse element actions:', parseError);
-    }
-  } catch (error) {
-    console.error('Error calling Claude API for element actions:', error);
-  }
-
-  // If anything fails, return context-based fallback actions
-  return getElementFallbackActions(context.elementContext);
-}
-
-// Get fallback actions for element analysis
-function getElementFallbackActions(elementContext) {
-  const elementType = elementContext?.type || 'unknown';
-  
-  switch (elementType) {
-    case 'image':
-      return [
-        { id: 'describe_image', label: 'Describe Image', icon: '🖼️', description: 'Get a detailed description of this image' },
-        { id: 'extract_text', label: 'Extract Text', icon: '📝', description: 'Extract any text from this image' },
-        { id: 'find_similar', label: 'Find Similar', icon: '🔍', description: 'Search for similar images' },
-        { id: 'analyze_content', label: 'Analyze Content', icon: '🔬', description: 'Analyze the image content and context' }
-      ];
-      
-    case 'chart':
-    case 'canvas':
-      return [
-        { id: 'explain_chart', label: 'Explain Chart', icon: '📊', description: 'Explain what this chart shows' },
-        { id: 'extract_data', label: 'Extract Data', icon: '📋', description: 'Extract data points from this visualization' },
-        { id: 'analyze_trends', label: 'Analyze Trends', icon: '📈', description: 'Identify trends and patterns' },
-        { id: 'summarize_insights', label: 'Key Insights', icon: '💡', description: 'Get key insights from this data' }
-      ];
-      
-    case 'table':
-      return [
-        { id: 'summarize_table', label: 'Summarize Data', icon: '📊', description: 'Get a summary of this table data' },
-        { id: 'extract_csv', label: 'Export CSV', icon: '📄', description: 'Convert to CSV format' },
-        { id: 'analyze_columns', label: 'Analyze Columns', icon: '🔍', description: 'Analyze relationships between columns' },
-        { id: 'find_patterns', label: 'Find Patterns', icon: '🎯', description: 'Identify patterns in the data' }
-      ];
-      
-    case 'numeric':
-      return [
-        { id: 'calculate', label: 'Calculate', icon: '🧮', description: 'Perform calculations with these numbers' },
-        { id: 'convert_units', label: 'Convert Units', icon: '🔄', description: 'Convert to different units or formats' },
-        { id: 'analyze_values', label: 'Analyze Values', icon: '📊', description: 'Statistical analysis of the numbers' },
-        { id: 'compare', label: 'Compare', icon: '⚖️', description: 'Compare with benchmarks or averages' }
-      ];
-      
-    case 'interactive':
-      return [
-        { id: 'explain_action', label: 'Explain Action', icon: '❓', description: 'What does this button/link do?' },
-        { id: 'find_alternatives', label: 'Alternatives', icon: '🔄', description: 'Find alternative ways to do this' },
-        { id: 'automate', label: 'Automate', icon: '🤖', description: 'Create automation for this action' },
-        { id: 'analyze_behavior', label: 'Analyze', icon: '🔍', description: 'Analyze the element behavior' }
-      ];
-      
-    case 'form':
-      return [
-        { id: 'explain_form', label: 'Explain Form', icon: '📝', description: 'Explain what this form does' },
-        { id: 'validate_fields', label: 'Validate', icon: '✅', description: 'Check form field requirements' },
-        { id: 'suggest_values', label: 'Suggest Values', icon: '💡', description: 'Suggest appropriate values' },
-        { id: 'extract_structure', label: 'Extract Structure', icon: '🏗️', description: 'Extract form structure and fields' }
-      ];
-      
-    default:
-      return [
-        { id: 'explain_element', label: 'Explain Element', icon: '💡', description: 'Explain what this element does' },
-        { id: 'extract_info', label: 'Extract Info', icon: '📋', description: 'Extract information from this element' },
-        { id: 'analyze_context', label: 'Analyze Context', icon: '🔍', description: 'Analyze element in page context' },
-        { id: 'suggest_actions', label: 'Suggest Actions', icon: '🎯', description: 'Suggest what to do with this' }
-      ];
-  }
-}
 
 // Analyze text and generate contextual actions
 async function analyzeAndGenerateActions(selectedText, context) {
@@ -244,7 +85,7 @@ Guidelines:
 - If it's code: suggest code-related actions (explain, refactor, debug, convert)
 - If it's an email/message: suggest communication actions (reply, summarize, tone change)
 - If it's an article/paragraph: suggest content actions (summarize, key points, translate)
-- If it's data/numbers: suggest analysis actions (visualize, calculate, format)
+- If it's a data/numbers: suggest analysis actions (visualize, calculate, format)
 - If it's a list: suggest organization actions (categorize, prioritize, expand)
 - Be specific to the actual content, not generic
 - Actions should be immediately useful for this specific text
@@ -375,7 +216,7 @@ function getFallbackActions() {
 }
 
 // Execute the selected action
-async function executeAction(action, text, context, isElementAnalysis = false) {
+async function executeAction(action, text, context) {
   if (!apiKey) {
     throw new Error('API key not configured. Please set it in the extension options.');
   }
@@ -384,9 +225,7 @@ async function executeAction(action, text, context, isElementAnalysis = false) {
   updateActionStats(action.id);
   
   // Generate prompt based on action
-  const prompt = isElementAnalysis 
-    ? generateElementPrompt(action, text, context)
-    : generateDynamicPrompt(action, text, context);
+  const prompt = generateDynamicPrompt(action, text, context);
   
   try {
     const response = await fetch(CLAUDE_API_ENDPOINT, {
@@ -420,22 +259,6 @@ async function executeAction(action, text, context, isElementAnalysis = false) {
     console.error('Error calling Claude API:', error);
     throw error;
   }
-}
-
-// Generate prompt for element analysis
-function generateElementPrompt(action, elementDescription, context) {
-  const elementInfo = context.elementContext ? `
-Element Information:
-- Type: ${context.elementContext.type}
-- Tag: ${context.elementContext.tagName}
-- Attributes: ${JSON.stringify(context.elementContext.attributes)}
-- Parent context: ${context.elementContext.parentContext}
-- Content: ${elementDescription}
-` : '';
-
-  const contextInfo = `Context: This element was clicked on ${context.domain} (${context.title}).${elementInfo}\n\n`;
-  
-  return `${action.description}. Be concise and practical. Focus on the specific element that was clicked.\n\n${contextInfo}`;
 }
 
 // Generate dynamic prompt based on the action
