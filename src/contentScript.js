@@ -61,71 +61,25 @@ async function showActionPalette() {
     domain: window.location.hostname
   };
   
-  // Show loading state
-  showLoadingPalette();
-  
   // Request prioritized actions from background script
   chrome.runtime.sendMessage({
     type: 'GET_ACTIONS',
     context: context,
     selectedText: selectedText
   }, (response) => {
-    // Check for Chrome runtime errors
-    if (chrome.runtime.lastError) {
-      console.error('Chrome runtime error:', chrome.runtime.lastError);
-      showError('Failed to connect to extension');
-      return;
-    }
-    
-    if (response && response.actions && response.actions.length > 0) {
+    if (response && response.actions) {
       createActionPalette(response.actions);
       positionPalette();
-    } else {
-      console.error('No actions received:', response);
-      showError('No actions available for this selection');
     }
   });
 }
 
-// Show loading palette while actions are being generated
-function showLoadingPalette() {
+// Create the action palette UI
+function createActionPalette(actions) {
   // Remove existing palette if any
   hideActionPalette();
   
-  // Create loading palette
-  actionPalette = document.createElement('div');
-  actionPalette.className = 'sidekick-action-palette sidekick-loading-palette';
-  actionPalette.setAttribute('data-sidekick', 'true');
-  actionPalette.innerHTML = `
-    <div class="sidekick-loading-spinner"></div>
-    <span class="sidekick-loading-text">Analyzing context...</span>
-  `;
-  
-  // Add to page
-  document.body.appendChild(actionPalette);
-  
-  // Position near selection
-  if (selectionRect) {
-    const top = selectionRect.top + window.scrollY - 60;
-    const left = selectionRect.left + window.scrollX + (selectionRect.width / 2) - 75;
-    actionPalette.style.top = `${top}px`;
-    actionPalette.style.left = `${left}px`;
-  }
-  
-  // Add show animation
-  setTimeout(() => {
-    actionPalette.classList.add('sidekick-show');
-  }, 10);
-}
-
-// Create the action palette UI
-function createActionPalette(actions) {
-  // Remove loading palette
-  if (actionPalette && actionPalette.classList.contains('sidekick-loading-palette')) {
-    actionPalette.remove();
-  }
-  
-  // Create new palette container
+  // Create palette container
   actionPalette = document.createElement('div');
   actionPalette.className = 'sidekick-action-palette';
   actionPalette.setAttribute('data-sidekick', 'true');
@@ -135,15 +89,11 @@ function createActionPalette(actions) {
     const button = document.createElement('button');
     button.className = 'sidekick-action-button';
     button.setAttribute('data-action', action.id);
-    button.setAttribute('title', action.description || action.label);
     button.innerHTML = `
       <span class="sidekick-action-icon">${action.icon}</span>
       <span class="sidekick-action-label">${action.label}</span>
     `;
-    button.addEventListener('click', (e) => {
-      e.stopPropagation();
-      executeAction(action.id);
-    });
+    button.addEventListener('click', () => executeAction(action.id));
     actionPalette.appendChild(button);
   });
   
@@ -207,17 +157,10 @@ function executeAction(actionId) {
   }, (response) => {
     hideLoadingState();
     
-    // Check for Chrome runtime errors
-    if (chrome.runtime.lastError) {
-      console.error('Chrome runtime error:', chrome.runtime.lastError);
-      showError('Failed to execute action');
-      return;
-    }
-    
-    if (response && response.success) {
+    if (response.success) {
       showResultPanel(response.result);
     } else {
-      showError(response?.error || 'Failed to execute action');
+      showError(response.error);
     }
   });
 }
@@ -280,23 +223,13 @@ function showResultPanel(result) {
 // Format result for display
 function formatResult(result) {
   // Convert markdown-style formatting to HTML
-  let formatted = result
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
+  return result
     .replace(/\n/g, '<br>')
-    .replace(/```(\w+)?\n([\s\S]*?)```/g, '<pre><code class="language-$1">$2</code></pre>')
     .replace(/`([^`]+)`/g, '<code>$1</code>')
     .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
     .replace(/\*([^*]+)\*/g, '<em>$1</em>')
-    .replace(/^#+\s+(.+)$/gm, (match, p1) => {
-      const level = match.indexOf(' ');
-      return `<h${Math.min(level, 6)}>${p1}</h${Math.min(level, 6)}>`;
-    })
     .replace(/^- (.+)$/gm, '<li>$1</li>')
-    .replace(/(<li>.*<\/li>)/s, '<ul>$1</ul>')
-    .replace(/<\/ul>\s*<ul>/g, '');
-  
-  return formatted;
+    .replace(/(<li>.*<\/li>)/s, '<ul>$1</ul>');
 }
 
 // Position result panel
@@ -389,10 +322,8 @@ function hideActionPalette() {
   if (actionPalette) {
     actionPalette.classList.remove('sidekick-show');
     setTimeout(() => {
-      if (actionPalette) {
-        actionPalette.remove();
-        actionPalette = null;
-      }
+      actionPalette.remove();
+      actionPalette = null;
     }, 300);
   }
 }
@@ -402,17 +333,14 @@ function hideResultPanel() {
   if (resultPanel) {
     resultPanel.classList.remove('sidekick-show');
     setTimeout(() => {
-      if (resultPanel) {
-        resultPanel.remove();
-        resultPanel = null;
-      }
+      resultPanel.remove();
+      resultPanel = null;
     }, 300);
   }
 }
 
 // Handle clicks outside palette
 function handleClickOutside(event) {
-  // Don't hide if clicking on the palette itself
   if (actionPalette && !actionPalette.contains(event.target) && 
       !event.target.hasAttribute('data-sidekick')) {
     hideActionPalette();
