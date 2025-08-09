@@ -22,6 +22,21 @@
   transform: translateY(0) scale(1);
 }
 
+/* Context Indicator for Element Mode */
+.sidekick-context-indicator {
+  display: flex;
+  align-items: center;
+  padding: 4px 10px;
+  background: rgba(66, 133, 244, 0.1);
+  border: 1px solid rgba(66, 133, 244, 0.2);
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #1967d2;
+  white-space: nowrap;
+  margin-right: 4px;
+}
+
 /* Loading State for Initial Palette */
 .sidekick-action-palette.sidekick-loading-state {
   min-width: 150px;
@@ -172,12 +187,37 @@
   transform: translateY(0);
 }
 
+/* Highlight clicked element */
+@keyframes sidekick-pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(66, 133, 244, 0.4);
+  }
+  70% {
+    box-shadow: 0 0 0 10px rgba(66, 133, 244, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(66, 133, 244, 0);
+  }
+}
+
+.sidekick-element-highlight {
+  outline: 2px solid #4285f4 !important;
+  outline-offset: 2px !important;
+  animation: sidekick-pulse 1.5s ease-out !important;
+}
+
 /* Dark Mode Support */
 @media (prefers-color-scheme: dark) {
   .sidekick-action-palette {
     background: #1e1e1e;
     border-color: rgba(255, 255, 255, 0.1);
     box-shadow: 0 4px 24px rgba(0, 0, 0, 0.4), 0 2px 8px rgba(0, 0, 0, 0.3);
+  }
+  
+  .sidekick-context-indicator {
+    background: rgba(66, 133, 244, 0.2);
+    border-color: rgba(66, 133, 244, 0.4);
+    color: #8ab4f8;
   }
   
   .sidekick-action-button {
@@ -206,6 +246,13 @@
   .sidekick-action-palette {
     flex-direction: column;
     max-width: calc(100vw - 32px);
+  }
+  
+  .sidekick-context-indicator {
+    width: 100%;
+    justify-content: center;
+    margin-right: 0;
+    margin-bottom: 4px;
   }
   
   .sidekick-action-button {

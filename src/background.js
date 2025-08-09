@@ -32,9 +32,18 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         sendResponse({ actions: getFallbackActions() });
       });
     return true; // Will respond asynchronously
+  } else if (request.type === 'GET_ELEMENT_ACTIONS') {
+    // Get element-specific actions
+    analyzeElementAndGenerateActions(request.element, request.context)
+      .then(actions => sendResponse({ actions }))
+      .catch(error => {
+        console.error('Error generating element actions:', error);
+        sendResponse({ actions: getElementFallbackActions(request.context) });
+      });
+    return true; // Will respond asynchronously
   } else if (request.type === 'EXECUTE_ACTION') {
     // Execute the selected action
-    executeAction(request.action, request.text, request.context)
+    executeAction(request.action, request.text, request.context, request.mode)
       .then(result => sendResponse({ success: true, result }))
       .catch(error => sendResponse({ success: false, error: error.message }));
     return true; // Will respond asynchronously
@@ -44,6 +53,160 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     sendResponse({ success: true });
   }
 });
+
+// Analyze element and generate contextual actions
+async function analyzeElementAndGenerateActions(element, context) {
+  if (!apiKey) {
+    return getElementFallbackActions(context);
+  }
+
+  try {
+    // Use Claude to analyze the element and suggest relevant actions
+    const response = await fetch(CLAUDE_API_ENDPOINT, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+        'anthropic-dangerous-direct-browser-access': 'true'
+      },
+      body: JSON.stringify({
+        model: MODEL,
+        max_tokens: 500,
+        temperature: 0.3,
+        messages: [
+          {
+            role: 'user',
+            content: `Analyze this clicked element and suggest exactly 4 contextual actions that would be most useful.
+            
+Context:
+- Current URL: ${context.url}
+- Page title: ${context.title}
+- Element type: ${element.tagName}
+- Element text: "${element.innerText?.substring(0, 200) || 'No text'}"
+- Element classes: ${element.className}
+- Element ID: ${element.id}
+- Parent context: ${JSON.stringify(context.parentContext)}
+- Is interactive: ${context.isInteractive}
+- Has chart: ${context.hasChart}
+- Has table: ${context.hasTable}
+- Has numbers: ${context.hasNumbers}
+${context.isTradingPlatform ? `- Trading context: ${JSON.stringify(context.tradingContext)}` : ''}
+
+Return a JSON array with exactly 4 actions. Each action should have:
+- id: a unique identifier (snake_case)
+- label: short action label (max 3-4 words)
+- icon: a single emoji that represents the action
+- description: what the action will do (one sentence)
+
+Guidelines:
+- If it's a chart/graph: suggest analysis, pattern detection, export data, explain trends
+- If it's a button/link: suggest explain purpose, find similar, extract info, analyze behavior
+- If it's a table cell: suggest calculate, compare, visualize, extract row/column
+- If it's an image: suggest describe, extract text, find similar, analyze content
+- If it's a form field: suggest validate, autofill, explain purpose, generate examples
+- If it's trading/financial: suggest analyze spread, calculate profit/loss, explain indicators, compare prices
+- Be specific to the element clicked, not generic
+
+Example for an order book element:
+[
+  {"id": "analyze_spread", "label": "Analyze Spread", "icon": "📊", "description": "Calculate bid-ask spread and market depth"},
+  {"id": "volume_profile", "label": "Volume Profile", "icon": "📈", "description": "Show volume distribution at different price levels"},
+  {"id": "order_imbalance", "label": "Order Imbalance", "icon": "⚖️", "description": "Detect buy/sell pressure imbalances"},
+  {"id": "price_levels", "label": "Key Levels", "icon": "🎯", "description": "Identify support and resistance levels"}
+]
+
+Respond with ONLY the JSON array, no other text.`
+          }
+        ]
+      })
+    });
+
+    if (!response.ok) {
+      throw new Error(`API request failed: ${response.status}`);
+    }
+
+    const data = await response.json();
+    const content = data.content[0].text;
+    
+    try {
+      const actions = JSON.parse(content);
+      // Validate and ensure we have exactly 4 actions
+      if (Array.isArray(actions) && actions.length === 4) {
+        return actions;
+      }
+    } catch (parseError) {
+      console.error('Failed to parse element actions:', parseError);
+    }
+  } catch (error) {
+    console.error('Error calling Claude API for element actions:', error);
+  }
+
+  // If anything fails, return context-based fallback actions
+  return getElementFallbackActions(context);
+}
+
+// Get element-specific fallback actions
+function getElementFallbackActions(context) {
+  // Trading platform specific actions
+  if (context.isTradingPlatform && context.tradingContext) {
+    if (context.tradingContext.isOrderBook) {
+      return [
+        { id: 'analyze_spread', label: 'Analyze Spread', icon: '📊', description: 'Calculate current bid-ask spread and depth' },
+        { id: 'order_flow', label: 'Order Flow', icon: '🌊', description: 'Analyze recent order flow patterns' },
+        { id: 'price_impact', label: 'Price Impact', icon: '💰', description: 'Calculate price impact for different order sizes' },
+        { id: 'market_depth', label: 'Market Depth', icon: '📈', description: 'Visualize market depth and liquidity' }
+      ];
+    }
+    
+    if (context.tradingContext.isChart || context.tradingContext.isCandlestick) {
+      return [
+        { id: 'pattern_recognition', label: 'Find Patterns', icon: '🔍', description: 'Identify chart patterns and formations' },
+        { id: 'trend_analysis', label: 'Trend Analysis', icon: '📈', description: 'Analyze current trend strength and direction' },
+        { id: 'support_resistance', label: 'Key Levels', icon: '🎯', description: 'Find support and resistance levels' },
+        { id: 'indicator_signals', label: 'Indicators', icon: '⚡', description: 'Calculate technical indicator values' }
+      ];
+    }
+  }
+  
+  // Chart/Graph actions
+  if (context.hasChart) {
+    return [
+      { id: 'explain_chart', label: 'Explain Chart', icon: '📊', description: 'Explain what this chart shows' },
+      { id: 'extract_data', label: 'Extract Data', icon: '📋', description: 'Extract data points from the chart' },
+      { id: 'find_trends', label: 'Find Trends', icon: '📈', description: 'Identify trends and patterns' },
+      { id: 'compare_values', label: 'Compare', icon: '⚖️', description: 'Compare different data points' }
+    ];
+  }
+  
+  // Table actions
+  if (context.hasTable) {
+    return [
+      { id: 'summarize_data', label: 'Summarize', icon: '📝', description: 'Summarize the table data' },
+      { id: 'calculate_stats', label: 'Statistics', icon: '🧮', description: 'Calculate statistics for numeric columns' },
+      { id: 'sort_filter', label: 'Sort & Filter', icon: '🔍', description: 'Suggest sorting and filtering options' },
+      { id: 'export_format', label: 'Export', icon: '📤', description: 'Convert to different formats' }
+    ];
+  }
+  
+  // Interactive element actions
+  if (context.isInteractive) {
+    return [
+      { id: 'explain_function', label: 'Explain', icon: '💡', description: 'Explain what this element does' },
+      { id: 'find_related', label: 'Find Related', icon: '🔗', description: 'Find related elements on page' },
+      { id: 'extract_info', label: 'Extract Info', icon: '📋', description: 'Extract key information' },
+      { id: 'analyze_behavior', label: 'Behavior', icon: '🎯', description: 'Analyze element behavior and events' }
+    ];
+  }
+  
+  // Default element actions
+  return [
+    { id: 'explain_element', label: 'Explain', icon: '💡', description: 'Explain this element\'s purpose' },
+    { id: 'extract_content', label: 'Extract', icon: '📋', description: 'Extract and format content' },
+    { id: 'find_similar', label: 'Find Similar', icon: '🔍', description: 'Find similar elements on page' },
+    { id: 'analyze_structure', label: 'Structure', icon: '🏗️', description: 'Analyze HTML structure and attributes' }
+  ];
+}
 
 // Analyze text and generate contextual actions
 async function analyzeAndGenerateActions(selectedText, context) {
@@ -85,7 +248,7 @@ Guidelines:
 - If it's code: suggest code-related actions (explain, refactor, debug, convert)
 - If it's an email/message: suggest communication actions (reply, summarize, tone change)
 - If it's an article/paragraph: suggest content actions (summarize, key points, translate)
-- If it's a data/numbers: suggest analysis actions (visualize, calculate, format)
+- If it's data/numbers: suggest analysis actions (visualize, calculate, format)
 - If it's a list: suggest organization actions (categorize, prioritize, expand)
 - Be specific to the actual content, not generic
 - Actions should be immediately useful for this specific text
@@ -216,7 +379,7 @@ function getFallbackActions() {
 }
 
 // Execute the selected action
-async function executeAction(action, text, context) {
+async function executeAction(action, text, context, mode = 'text') {
   if (!apiKey) {
     throw new Error('API key not configured. Please set it in the extension options.');
   }
@@ -224,8 +387,10 @@ async function executeAction(action, text, context) {
   // Update usage stats
   updateActionStats(action.id);
   
-  // Generate prompt based on action
-  const prompt = generateDynamicPrompt(action, text, context);
+  // Generate prompt based on action and mode
+  const prompt = mode === 'element' ? 
+    generateElementPrompt(action, text, context) : 
+    generateDynamicPrompt(action, text, context);
   
   try {
     const response = await fetch(CLAUDE_API_ENDPOINT, {
@@ -259,6 +424,27 @@ async function executeAction(action, text, context) {
     console.error('Error calling Claude API:', error);
     throw error;
   }
+}
+
+// Generate prompt for element-based actions
+function generateElementPrompt(action, elementData, context) {
+  let parsedData;
+  try {
+    parsedData = JSON.parse(elementData);
+  } catch (e) {
+    parsedData = { text: elementData };
+  }
+  
+  const contextInfo = `Context: Element clicked on ${context.domain} (${context.title}).
+Element type: ${context.elementType}
+Element path: ${context.elementPath}
+${context.isTradingPlatform ? `Trading platform context: ${JSON.stringify(context.tradingContext)}` : ''}
+
+Element HTML: ${parsedData.html || ''}
+Element text: ${parsedData.text || ''}
+`;
+  
+  return `${action.description}. Be specific and practical. Focus on the clicked element and its immediate context.\n\n${contextInfo}`;
 }
 
 // Generate dynamic prompt based on the action

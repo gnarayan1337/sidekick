@@ -13,6 +13,12 @@ Sidekick AI anticipates user intent and provides actionable shortcuts with a sin
 - Shows 2-4 dynamic buttons with the most relevant actions
 - Beautiful, modern UI that adapts to light/dark themes
 
+### Element Context Analysis (NEW!)
+- **Alt+Click** (Windows/Linux) or **Cmd+Click** (Mac) on any element
+- Get context-specific actions for charts, tables, buttons, and more
+- Special support for trading platforms (order books, candlestick charts, indicators)
+- Analyzes element structure, content, and surrounding context
+
 ### Workflow-Specific Actions
 
 **For Developers:**
@@ -61,10 +67,22 @@ Sidekick AI anticipates user intent and provides actionable shortcuts with a sin
 
 ## 🎮 How to Use
 
+### Text Selection Mode
 1. **Select Text**: Highlight any text on a webpage
 2. **Choose Action**: Click one of the suggested actions in the floating palette
 3. **Get Results**: View the AI-generated response in a beautiful panel
 4. **Take Action**: Copy to clipboard or insert directly into text fields
+
+### Element Analysis Mode (NEW!)
+1. **Alt+Click** (Windows/Linux) or **Cmd+Click** (Mac) on any element
+2. **See Context Actions**: Get actions specific to that element type
+3. **Execute Actions**: Click to analyze charts, tables, buttons, etc.
+
+#### Special Support for Trading Platforms
+- **Order Books**: Analyze spread, order flow, market depth
+- **Price Charts**: Find patterns, analyze trends, identify key levels
+- **Candlesticks**: Get technical analysis, indicator signals
+- **Data Tables**: Calculate statistics, visualize data
 
 ## 🔧 Technical Details
 
@@ -74,6 +92,7 @@ Sidekick AI anticipates user intent and provides actionable shortcuts with a sin
   - Background service worker for API calls
   - Content script for UI interaction
   - Secure API key storage using Chrome Storage API
+  - Dynamic context analysis for both text and elements
 
 ## 🛡️ Privacy & Security
 
