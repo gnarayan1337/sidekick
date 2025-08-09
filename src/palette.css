@@ -22,6 +22,29 @@
   transform: translateY(0) scale(1);
 }
 
+/* Loading Palette */
+.sidekick-loading-palette {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  min-width: 150px;
+}
+
+.sidekick-loading-spinner {
+  width: 20px;
+  height: 20px;
+  border: 2px solid #f3f3f3;
+  border-top-color: #4285f4;
+  border-radius: 50%;
+  animation: sidekick-spin 0.8s linear infinite;
+}
+
+.sidekick-loading-text {
+  font-size: 13px;
+  color: #666;
+}
+
 /* Action Buttons */
 .sidekick-action-button {
   display: flex;
@@ -39,6 +62,7 @@
   white-space: nowrap;
   outline: none;
   font-family: inherit;
+  position: relative;
 }
 
 .sidekick-action-button:hover {
@@ -58,6 +82,48 @@
   opacity: 0.5;
   cursor: not-allowed;
   transform: none;
+}
+
+/* Action button tooltip */
+.sidekick-action-button:hover::after {
+  content: attr(title);
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 6px 10px;
+  margin-bottom: 8px;
+  background: rgba(0, 0, 0, 0.8);
+  color: white;
+  font-size: 12px;
+  font-weight: normal;
+  border-radius: 6px;
+  white-space: nowrap;
+  opacity: 0;
+  animation: sidekick-tooltip-appear 0.3s ease-out 0.5s forwards;
+  pointer-events: none;
+  max-width: 200px;
+  text-align: center;
+}
+
+.sidekick-action-button:hover::before {
+  content: '';
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  margin-bottom: 3px;
+  border: 5px solid transparent;
+  border-top-color: rgba(0, 0, 0, 0.8);
+  opacity: 0;
+  animation: sidekick-tooltip-appear 0.3s ease-out 0.5s forwards;
+  pointer-events: none;
+}
+
+@keyframes sidekick-tooltip-appear {
+  to {
+    opacity: 1;
+  }
 }
 
 /* Action Icons */
@@ -126,6 +192,10 @@
     box-shadow: 0 4px 24px rgba(0, 0, 0, 0.4), 0 2px 8px rgba(0, 0, 0, 0.3);
   }
   
+  .sidekick-loading-text {
+    color: #aaa;
+  }
+  
   .sidekick-action-button {
     background: #2d2d2d;
     border-color: #3d3d3d;
@@ -149,5 +219,10 @@
   .sidekick-action-button {
     width: 100%;
     justify-content: center;
+  }
+  
+  .sidekick-action-button:hover::after,
+  .sidekick-action-button:hover::before {
+    display: none; /* Hide tooltips on mobile */
   }
 } 

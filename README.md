@@ -8,26 +8,41 @@ Sidekick AI anticipates user intent and provides actionable shortcuts with a sin
 
 ## 🚀 Features
 
-### Contextual Action Palette
-- Automatically appears when you select text
-- Shows 2-4 dynamic buttons with the most relevant actions
-- Beautiful, modern UI that adapts to light/dark themes
+### Dynamic Context-Aware Actions
+- **AI-Powered Analysis**: Uses Claude to analyze selected text and generate the most relevant actions
+- **Context-Specific**: Automatically detects code, emails, lists, data, questions, and more
+- **No Hardcoded Options**: Every selection gets custom actions tailored to the content
+- **Smart Fallbacks**: Falls back to intelligent defaults if AI analysis fails
 
-### Workflow-Specific Actions
+### Intelligent Action Generation
 
-**For Developers:**
-- 📜 **Explain this Code** - Get clear explanations of code snippets
-- ♻️ **Refactor for Readability** - Improve code structure
-- 💬 **Add Docstrings** - Generate comprehensive documentation
+The extension dynamically generates actions based on what you select:
 
-**For Writers:**
-- ✂️ **Make Concise** - Shorten text while preserving meaning
-- 👔 **Professional Tone** - Convert casual text to business-appropriate language
-- 📝 **Key Points** - Extract main ideas as bullet points
+**For Code:**
+- 💡 Explain Code - Understand what the code does
+- 🐛 Find Bugs - Identify issues and suggest fixes
+- 💬 Add Comments - Generate helpful inline documentation
+- ✨ Improve Code - Optimize for performance and readability
 
-**Universal Actions:**
-- 🔍 **Quick Summary** - Summarize any text in 2-3 sentences
-- 💾 **Save to Notion** - Format text for easy saving (coming soon)
+**For Emails:**
+- 👔 Professional Tone - Make it business-appropriate
+- 😊 Friendly Tone - Add warmth and personality
+- ↩️ Draft Reply - Generate thoughtful responses
+- 📋 Add Structure - Organize with clear sections
+
+**For Lists & Data:**
+- 📊 Organize List - Group items logically
+- 📈 Create Charts - Generate visualization code
+- 🧮 Calculate - Perform computations
+- 🎯 Prioritize - Rank by importance
+
+**For Questions:**
+- 💭 Answer - Provide comprehensive responses
+- 🔍 Research - Expand with context
+- ⚖️ Pros & Cons - Balanced analysis
+- 👶 ELI5 - Explain simply
+
+**And many more context-specific actions!**
 
 ### Smart Personalization
 - Learns from your usage patterns
@@ -62,18 +77,20 @@ Sidekick AI anticipates user intent and provides actionable shortcuts with a sin
 ## 🎮 How to Use
 
 1. **Select Text**: Highlight any text on a webpage
-2. **Choose Action**: Click one of the suggested actions in the floating palette
-3. **Get Results**: View the AI-generated response in a beautiful panel
-4. **Take Action**: Copy to clipboard or insert directly into text fields
+2. **Wait for Analysis**: A loading indicator shows while AI analyzes the context
+3. **Choose Action**: Click one of the suggested actions (hover for descriptions)
+4. **Get Results**: View the AI-generated response in a beautiful panel
+5. **Take Action**: Copy to clipboard or insert directly into text fields
 
 ## 🔧 Technical Details
 
 - **Platform**: Chrome Extension (Manifest V3)
 - **AI Model**: Claude 3 Haiku (fast model for quick responses)
 - **Architecture**: 
-  - Background service worker for API calls
+  - Background service worker for API calls and action generation
   - Content script for UI interaction
   - Secure API key storage using Chrome Storage API
+  - Dynamic action generation using AI analysis
 
 ## 🛡️ Privacy & Security
 
@@ -100,11 +117,12 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 
 - [ ] Backend proxy server for secure API calls
 - [ ] Local LLM support for offline functionality
-- [ ] Custom action creation
+- [ ] Custom action creation and templates
 - [ ] Keyboard shortcuts
 - [ ] Integration with more services (Notion, Slack, etc.)
-- [ ] Advanced context detection
+- [ ] Advanced context detection (page structure, user history)
 - [ ] Batch processing for multiple selections
+- [ ] Action result caching for common operations
 
 ## 📄 License
 
